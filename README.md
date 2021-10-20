@@ -132,11 +132,6 @@ To compile `autoreverse` you need a recent version of [go](https://golang.org). 
 later is recommended. For security reasons, avoid compiling with anything prior to 1.16.2
 on Linux targets due to possible issues with Setuid() and threads.
 
-If you want `autoreverse` to be built with embedded [usage](USAGE.md), your build
-environment needs access to the [lowdown](https://kristaps.bsd.lv/lowdown/) command which
-converts markdown documents to other rendering formats. If you have another markdown
-processor you'll need to modify the Makefile to accomodate it.
-
 ### Target Systems and cross-compiling
 
 `autoreverse` has been tested on various CPU architectures with FreeBSD, Linux and
