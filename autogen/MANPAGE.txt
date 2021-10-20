@@ -1,0 +1,145 @@
+NAME
+  autoreverse -- a simple ipv4 and ipv6 reverse DNS name server
+
+SYNOPSIS
+  autoreverse [-h|-help] [-v|-version]
+              [-log] [-report time.Duration]
+              [-synthesize] [-origin domain]
+              [-max-Answers int] [-TTL time.Duration] [-CHAOS] [-NSID string]
+              [-exclude-private] [-include-CIDR CIDR]...
+              [-user username] [-group groupname] [-chroot path]
+              [-listen ipaddr]... [forward-zone-file]...
+
+DESCRIPTION
+  autoreverse is a simple authoritative DNS server with the solitary goal of making it
+  trivially easy to auto-answer reverse queries for ipv4 and ipv6 with minimal
+  configuration.
+
+  In the simplest case autoreverse runs without *any* options at all and deduces
+  everything needed to answer PTR queries with synthesized answers. A slightly more
+  complex invocation involves supplying a forward zone file from which PTR answers are
+  deduced from A and AAAA resources. In more complex cases, command line options control
+  behavior more precisely.
+
+  In all cases you should no longer need to manually construct any of those error-prone
+  PTR RRs with their multitude of reverse nibbles and weird delegation boundaries. I hope
+  that's as much of a relief to you as it is to this author who was primarily motivated by
+  such madness to create this program.
+
+USE CASES
+  The simplest invocation is to run autoreverse with no options as root, thus:
+
+    # autoreverse
+
+  and autoreverse will reply to well-formed PTR queries (excepting private addresses) with
+  a synthesized answer.
+
+  Perhaps a more common use-case is when you want some of the answers to include your own
+  domain details. To do this provide autoreverse with the zone file:
+
+    # autoreverse example.net.zone
+
+  and autoreverse will reply to well-formed PTR queries (again excepting private
+  addresses) with either a matching name found in the zone file or a synthesized answer.
+
+  A more complicated invocation is:
+
+  # autoreverse -log -NSID `hostname` -include-CIDR 2403:4801:2020::/48  \
+                -user nobody -group nobody -chroot /tmp \
+                -listen 1.2.3.4 -listen [::1]:53 \
+                data/example.net.zone data/example.com.zone data/example.org.zone
+
+  which listens on multiple addresses, deduces reverse PTR names from multiple zone files,
+  restrict answers to only PTR RRs that are in the 2403:4801:2020::/48 range and gives
+  away root permissions to run as an un-privileged daemon. This invocation also supplies
+  the hostname in response to any query containing the NSID option. Finally, all DNS
+  exchanges are logged to Stdout.
+
+OPTIONS
+  -CHAOS
+    	Answer CHAOS TXT queries to version.server and version.bind with the
+    	OriginURL of this project. (default true)
+  -NSID string
+    	Respond to EDNS NSID sub-opt requests with the supplied string. This string
+    	is encoded into hexadecimal by autoreverse for placement in the response so
+    	don't supply this as hexadecimal yourself.
+  -TTL duration
+    	TTL to apply to all responses. For PTR RRs deduced from zone file
+    	autoreverse normally uses the associated address record TTL. However if this
+    	option is set, the TTL of deduced answers are over-ridden. This value must not be
+    	less than one second.
+  -chroot string
+    	Downgrade privileges by issuing a chroot(path) after Listen Sockets have been
+    	opened. In conjunction with -user and -group this option constraints autoreverse
+    	access to  the file system. autoreverse must be run as root for this option to
+    	succeed.
+  -exclude-private
+    	Do not answer any queries in private address space as defined by RFC 1918,
+    	Section 3. and RFC 4193, Section 8. If set, queries for these addresses result in
+    	a "Refused" response. (default true)
+  -group string
+    	Downgrade privileges by issuing a setgid(group) after Listen Sockets have been
+    	opened. In conjunction with -user and -chroot this option removes root privileges
+    	from the process and constrains autoreverse access to other system components.
+    	autoreverse must be run as root for this option to succeed.
+  -h	Alias for -help
+  -help
+    	Print usage message to stdout and exit(0)
+  -include-CIDR value
+    	Only answer queries to addresses within these networks. By default autoreverse
+    	answers all well-formed PTR queries unless constrained by this option and
+    	-exclude-private. This option is of use when run with zone files which might
+    	contain address space entries you'd rather not have exposed.
+    	
+    	Once there is one or more occurrences of -include-CIDR, autoreverse switches modes
+    	whereby only queries in any of the included addresses are allowed. Queries outside
+    	these addresses resulted in a "Refused" response. Note that -exclude-private is
+    	expected to cover address ranges of concern.
+  -listen value
+    	Address to listen on for DNS queries. If just an IP address or host
+    	name is supplied, autoreverse assumes the 'domain' service (aka port 53). A
+    	specific port can be provided with the usual host:port, v4address:port or
+    	[v6address]:port syntax.
+    	
+    	However the port is determined, on most Unix-like systems, autoreverse
+    	will normally need to be started by root to listen to "privileged
+    	ports" such as port 53. Under these circumstances, it is highly recommended that
+    	the autoreverse invocation include the -user, -group and -chroot options to
+    	downgrade process privileges once the Listen Sockets have been opened.
+    	
+    	autoreverse listens on both UDP and TCP for DNS queries. (The default if no
+    	listen addresses are provided is :domain)
+  -log
+    	Log DNS exchanges to Stdout
+  -max-Answers int
+    	Maximum PTR RRs to allow in an answer (default 5)
+  -origin string
+    	Domain to append to synthesized PTRs
+  -report duration
+    	Interval between stats reports (default 10m0s)
+  -synthesize
+    	Synthesize missing PTRs (default true)
+  -user string
+    	Downgrade privileges by issuing a setgid(group) after Listen Sockets have been
+    	opened. In conjunction with -group and -chroot this option removes root privileges
+    	from the process and constrains autoreverse access to other system components.
+    	autoreverse must be run as root for this option to succeed.
+  -v	Alias for -version
+  -verbose
+    	Print extensive setup details
+  -version
+    	Print version and origin URL then exit
+
+Note: The -listen and -include options as well as the "forward-zone-file" parameter can
+      be repeated multiple times.
+
+SIGNALS
+  SIGUSR1 - generates an immediate stats report
+  SIGTERM - initiate shutdown
+  SIGINT, SIGHUP - reserved
+
+MORE INFO
+  Please visit: https://github.com/markdingo/autoreverse/README.md
+
+Program:   autoreverse v0.0.1
+OriginURL: github.com/markdingo/autoreverse
