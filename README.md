@@ -78,7 +78,7 @@ invocation might look like:
 
 
 ```sh
-# /usr/local/sbin/autoreverse -listen 2001:db8::1 /etc/nsd/example.net.zone
+# /usr/local/sbin/autoreverse -listen 2001:db8::1 -file-zone /etc/nsd/example.net.zone
 ```
 
 In all cases you should notice a complete absence of any tell-tale signs of reverse zone

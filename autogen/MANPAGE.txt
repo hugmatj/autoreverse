@@ -3,12 +3,13 @@ NAME
 
 SYNOPSIS
   autoreverse [-h|-help] [-v|-version]
-              [-log] [-report time.Duration]
-              [-synthesize] [-origin domain]
+              [-ignore-zone-errors] [-log] [-report time.Duration]
+              [-synthesize] [-prepend string] [-origin domain]
               [-max-Answers int] [-TTL time.Duration] [-CHAOS] [-NSID string]
-              [-exclude-private] [-include-CIDR CIDR]...
               [-user username] [-group groupname] [-chroot path]
-              [-listen ipaddr]... [forward-zone-file]...
+              [-exclude-private] [-include-CIDR CIDR]...
+              [-listen ipaddr]...
+              [-axfr-zone domain/auth-server]... [-file-zone forward-zone-file]...
 
 DESCRIPTION
   autoreverse is a simple authoritative DNS server with the solitary goal of making it
@@ -17,14 +18,14 @@ DESCRIPTION
 
   In the simplest case autoreverse runs without *any* options at all and deduces
   everything needed to answer PTR queries with synthesized answers. A slightly more
-  complex invocation involves supplying a forward zone file from which PTR answers are
-  deduced from A and AAAA resources. In more complex cases, command line options control
-  behavior more precisely.
+  complex invocation involves supplying a forward zone (or zones)  from which PTR answers
+  are deduced from A and AAAA resources. In more complex cases, command line options
+  control behavior more precisely.
 
   In all cases you should no longer need to manually construct any of those error-prone
-  PTR RRs with their multitude of reverse nibbles and weird delegation boundaries. I hope
-  that's as much of a relief to you as it is to this author who was primarily motivated by
-  such madness to create this program.
+  PTR RRs with their multitude of reverse nibbles and inscrutable delegation boundaries.
+  I hope that's as much of a relief to you as it is to this author who was primarily
+  motivated by such madness to create this program.
 
 USE CASES
   The simplest invocation is to run autoreverse with no options as root, thus:
@@ -44,51 +45,91 @@ USE CASES
 
   A more complicated invocation is:
 
-  # autoreverse -log -NSID `hostname` -include-CIDR 2403:4801:2020::/48  \
-                -user nobody -group nobody -chroot /tmp \
-                -listen 1.2.3.4 -listen [::1]:53 \
-                data/example.net.zone data/example.com.zone data/example.org.zone
+  # autoreverse -log -NSID `hostname` -include-CIDR 2001:db8:1234::/56  \
+                -origin reverse.example.org                \
+                -user nobody -group nobody -chroot /tmp    \
+                -listen 192.0.2.1 -listen [2001:db8::1]:53 \
+                -file-zone data/example.net.zone -file-zone data/example.com.zone \
+                -axfr-zone example.org/a.ns.example.org
 
   which listens on multiple addresses, deduces reverse PTR names from multiple zone files,
-  restrict answers to only PTR RRs that are in the 2403:4801:2020::/48 range and gives
-  away root permissions to run as an un-privileged daemon. This invocation also supplies
-  the hostname in response to any query containing the NSID option. Finally, all DNS
-  exchanges are logged to Stdout.
+  and a remote zone transfer; it also restrict answers to only PTR RRs that are in the
+  2403:4801:2020::/48 range and gives away root permissions to run as an un-privileged
+  daemon. This invocation also supplies the hostname in response to any query containing
+  the NSID option. Finally, all DNS exchanges are logged to Stdout.
+
+  Few use-cases require such a complicated invocation, but this exemplar serves to
+  demonstrate less common features.
+
+PROJECT INFORMATION
+  Please visit: github.com/markdingo/autoreverse
 
 OPTIONS
   -CHAOS
     	Answer CHAOS TXT queries to version.server and version.bind with the
-    	OriginURL of this project. (default true)
+    	Project URL. (default true)
   -NSID string
     	Respond to EDNS NSID sub-opt requests with the supplied string. This string
     	is encoded into hexadecimal by autoreverse for placement in the response so
     	don't supply this as hexadecimal yourself.
   -TTL duration
-    	TTL to apply to all responses. For PTR RRs deduced from zone file
+    	TTL to apply to all responses. For PTR RRs deduced from forward zones
     	autoreverse normally uses the associated address record TTL. However if this
     	option is set, the TTL of deduced answers are over-ridden. This value must not be
     	less than one second.
+  -axfr-zone value
+    	The forward zone is loaded from the authoritative name server via AXFR and
+    	scanned for address records to deduce PTRs in exactly the same way as -file-zone.
+    	The syntax for the supplied value is zone/auth-server:service, e.g.
+    	'example.net/a.ns.example.net:domain'. (Yes, this is kindof a clunky setting, but
+    	I'm strenuously avoiding introducting configuration files.)
   -chroot string
-    	Downgrade privileges by issuing a chroot(path) after Listen Sockets have been
-    	opened. In conjunction with -user and -group this option constraints autoreverse
-    	access to  the file system. autoreverse must be run as root for this option to
-    	succeed.
+    	Downgrade process privileges by issuing a chroot(path). In conjunction with
+    	-user and -group this option restricts access to a subset of the file system.
+    	autoreverse must start as root for this option to succeed. The supplied path
+    	*has* to be an absolute path otherwise the chroot() call fails.
+    	
+    	There are caveats with -chroot in that it impacts -file-zone and -axfr-zone.
+    	Once chroot is set, *all* file access is relative to the -chroot directory.
+    	This obviously affects -file-zone but also impacts name resolution which
+    	often relies on files such as /etc/resolv.conf. If not properly established
+    	a chroot can cause name resolution of -axfr-zone auth servers to fail.
   -exclude-private
     	Do not answer any queries in private address space as defined by RFC 1918,
     	Section 3. and RFC 4193, Section 8. If set, queries for these addresses result in
     	a "Refused" response. (default true)
+  -file-zone value
+    	The forward zone is loaded from the file and scanned for address records
+    	to deduce PTR answers in preference to synthesized answers. This is a way of
+    	mixing your own zone data with synthesized answers. Both -exclude-private and
+    	-include-CIDR restrictions apply to PTRs deduced from the zone file.
+    	
+    	It's important to note that the -file-zone option is processed *after*
+    	-chroot (if present) in which case the -file-zone path needs to be relative to
+    	the chroot directory.
   -group string
     	Downgrade privileges by issuing a setgid(group) after Listen Sockets have been
-    	opened. In conjunction with -user and -chroot this option removes root privileges
-    	from the process and constrains autoreverse access to other system components.
-    	autoreverse must be run as root for this option to succeed.
+    	opened. In conjunction with -user and -chroot this option is used to remove
+    	root privileges and restrict access to other system components. autoreverse must
+    	start as root for this option to succeed.
   -h	Alias for -help
   -help
     	Print usage message to stdout and exit(0)
+  -ignore-zone-errors
+    	Continue operating in the presence of errors fetching or parsing forward zones.
+    	If set false, exit on any zone error.
+    	
+    	If errors are detected while loading or reloading zones, all previously
+    	loaded values are retained and the current load attempt is discarded.
+    	
+    	This forbearance does not extend to deducing the origin domain for -synthesize.
+    	
+    	zone-related errors and warnings are always reported to Stdout regardless
+    	of this setting. (default true)
   -include-CIDR value
     	Only answer queries to addresses within these networks. By default autoreverse
     	answers all well-formed PTR queries unless constrained by this option and
-    	-exclude-private. This option is of use when run with zone files which might
+    	-exclude-private. This option is of use when loading forward zones which might
     	contain address space entries you'd rather not have exposed.
     	
     	Once there is one or more occurrences of -include-CIDR, autoreverse switches modes
@@ -112,34 +153,50 @@ OPTIONS
   -log
     	Log DNS exchanges to Stdout
   -max-Answers int
-    	Maximum PTR RRs to allow in an answer (default 5)
+    	Maximum PTR RRs to allow in response. This helps constrain the size of
+    	the response. This limit only has relevance to PTRs deduce from forward zones.
+    	Regardless of this setting, the response is truncated to the maximum allowed by
+    	the query, including any EDNS0 values. If set to zero, all available PTRs are
+    	placed in the answer prior to truncation evaluation. (default 5)
   -origin string
-    	Domain to append to synthesized PTRs
+    	Origin domain to append to synthesized PTRs. The origin domain is normally
+    	deduced from either the first $ORIGIN of a zone file, the first domain AXFR
+    	transferred or as a last resport, os.Hostname(). This option replaces that
+    	deduction process with the specific domain. No surrounding '.'s needed.
+  -prepend string
+    	A string prepended to the origin Domain when synthesizing PTR answers. The
+    	complete PTR answer consists of qname-as-ip.prepend.originDomain. This option
+    	can be set to the empty string. No surrounding '.'s needed. (default "autoreverse")
   -report duration
     	Interval between stats reports (default 10m0s)
   -synthesize
-    	Synthesize missing PTRs (default true)
+    	Synthesize missing PTRs. If a PTR query cannot be satisfied with any address
+    	records found in loaded zones and this flag is true then a synthetic response is
+    	generated based on the qName, the prepend setting and the origin Domain. If this
+    	flag is false a "REFUSED" response is returned.
+    	
+    	If set, this option implies that autoreverse *must* be able to deduce an origin
+    	Domain. If an origin Domain cannot be deduce or one is not set with -origin, then
+    	autoreverse exits with an error message. (default true)
   -user string
     	Downgrade privileges by issuing a setgid(group) after Listen Sockets have been
-    	opened. In conjunction with -group and -chroot this option removes root privileges
-    	from the process and constrains autoreverse access to other system components.
-    	autoreverse must be run as root for this option to succeed.
+    	opened. In conjunction with -group and -chroot this option is used to remove root
+    	privileges and restrict access to other system components. autoreverse must start
+    	as root for this option to succeed.
   -v	Alias for -version
   -verbose
     	Print extensive setup details
   -version
     	Print version and origin URL then exit
 
-Note: The -listen and -include options as well as the "forward-zone-file" parameter can
-      be repeated multiple times.
+Note: The -listen, -include, -file-zone and -axfr-zone options can be repeated multiple
+      times.
 
 SIGNALS
   SIGUSR1 - generates an immediate stats report
   SIGTERM - initiate shutdown
-  SIGINT, SIGHUP - reserved
+  SIGHUP - attempt an immediate reload of forward zones
+  SIGINT - reserved
 
-MORE INFO
-  Please visit: https://github.com/markdingo/autoreverse/README.md
-
-Program:   autoreverse v0.0.1
-OriginURL: github.com/markdingo/autoreverse
+Program:    autoreverse v0.0.1
+ProjectURL: github.com/markdingo/autoreverse
